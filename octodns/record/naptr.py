@@ -5,6 +5,7 @@
 from ..equality import EqualityTupleMixin
 from .base import Record, ValuesMixin, unquote
 from .rr import RrParseError
+from .target import _check_target_trailing_dot
 from .validator import ValueValidator
 
 
@@ -93,17 +94,31 @@ class NaptrValueRfcValidator(ValueValidator):
 
             if 'replacement' not in value:
                 reasons.append('missing replacement')
-            else:
-                replacement = value['replacement']
-                if (
-                    replacement
-                    and replacement != '.'
-                    and not replacement.endswith('.')
-                ):
-                    reasons.append(
-                        f'NAPTR replacement "{replacement}" missing trailing .'
-                    )
 
+        return reasons
+
+
+class NaptrValueBestPracticeValidator(ValueValidator):
+    '''
+    Checks that the NAPTR ``replacement`` field ends with a trailing
+    ``.`` (fully-qualified name) when non-empty and not the null
+    replacement ``"."``.
+
+    Enabled as part of the ``best-practice`` validator set::
+
+      manager:
+        enabled:
+          - best-practice
+    '''
+
+    def validate(self, value_cls, data, _type):
+        reasons = []
+        for value in data:
+            replacement = value.get('replacement')
+            if replacement:
+                reasons += _check_target_trailing_dot(
+                    replacement, _type, 'replacement'
+                )
         return reasons
 
 
@@ -113,6 +128,9 @@ class NaptrValue(EqualityTupleMixin, dict):
     VALIDATORS = [
         NaptrValueValidator('naptr-value', sets={'legacy'}),
         NaptrValueRfcValidator('naptr-value-rfc', sets={'strict'}),
+        NaptrValueBestPracticeValidator(
+            'naptr-value-best-practice', sets={'best-practice'}
+        ),
     ]
 
     @classmethod

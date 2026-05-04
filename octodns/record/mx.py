@@ -6,7 +6,7 @@ from ..equality import EqualityTupleMixin
 from ..idna import idna_encode
 from .base import Record, ValuesMixin, unquote
 from .rr import RrParseError
-from .target import validate_target_fqdn
+from .target import _check_target_format, _check_target_trailing_dot
 from .validator import ValueValidator
 
 
@@ -32,7 +32,7 @@ class MxValueValidator(ValueValidator):
             exchange = None
             try:
                 exchange = value.get('exchange') or value['value']
-                reasons += validate_target_fqdn(exchange, _type, 'exchange')
+                reasons += _check_target_format(exchange, _type, 'exchange')
             except KeyError:
                 reasons.append('missing exchange')
         return reasons
@@ -80,7 +80,31 @@ class MxValueRfcValidator(ValueValidator):
                         'preference must be 0 for null MX (exchange ".")'
                     )
             else:
-                reasons += validate_target_fqdn(exchange, _type, 'exchange')
+                reasons += _check_target_format(exchange, _type, 'exchange')
+        return reasons
+
+
+class MxValueBestPracticeValidator(ValueValidator):
+    '''
+    Checks that the MX ``exchange`` field ends with a trailing ``.``
+    (fully-qualified name).  Without the trailing dot resolvers may
+    append the host search domain, causing extra lookups.
+
+    Enabled as part of the ``best-practice`` validator set::
+
+      manager:
+        enabled:
+          - best-practice
+    '''
+
+    def validate(self, value_cls, data, _type):
+        reasons = []
+        for value in data:
+            exchange = value.get('exchange') or value.get('value')
+            if exchange:
+                reasons += _check_target_trailing_dot(
+                    exchange, _type, 'exchange'
+                )
         return reasons
 
 
@@ -88,6 +112,9 @@ class MxValue(EqualityTupleMixin, dict):
     VALIDATORS = [
         MxValueValidator('mx-value', sets={'legacy'}),
         MxValueRfcValidator('mx-value-rfc', sets={'strict'}),
+        MxValueBestPracticeValidator(
+            'mx-value-best-practice', sets={'best-practice'}
+        ),
     ]
 
     @classmethod

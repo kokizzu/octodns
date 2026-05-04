@@ -8,7 +8,12 @@ from helpers import SimpleProvider
 
 from octodns.record import Record
 from octodns.record.exception import ValidationError
-from octodns.record.naptr import NaptrRecord, NaptrValue, NaptrValueRfcValidator
+from octodns.record.naptr import (
+    NaptrRecord,
+    NaptrValue,
+    NaptrValueBestPracticeValidator,
+    NaptrValueRfcValidator,
+)
 from octodns.record.rr import RrParseError
 from octodns.zone import Zone
 
@@ -491,6 +496,123 @@ class TestRecordNaptr(TestCase):
                 [f'unrecognized flags "{invalid_flag}"'], ctx.exception.reasons
             )
 
+    def test_best_practice_validator(self):
+        validate = NaptrValueBestPracticeValidator(
+            'naptr-value-best-practice'
+        ).validate
+
+        # replacement with trailing dot passes
+        self.assertEqual(
+            [],
+            validate(
+                NaptrValue,
+                [
+                    {
+                        'order': 10,
+                        'preference': 20,
+                        'flags': 'A',
+                        'service': 'svc',
+                        'regexp': '',
+                        'replacement': 'target.example.com.',
+                    }
+                ],
+                'NAPTR',
+            ),
+        )
+        # null replacement "." passes
+        self.assertEqual(
+            [],
+            validate(
+                NaptrValue,
+                [
+                    {
+                        'order': 10,
+                        'preference': 20,
+                        'flags': 'S',
+                        'service': 'svc',
+                        'regexp': '',
+                        'replacement': '.',
+                    }
+                ],
+                'NAPTR',
+            ),
+        )
+        # replacement missing trailing dot
+        self.assertEqual(
+            ['NAPTR replacement "example.com" missing trailing .'],
+            validate(
+                NaptrValue,
+                [
+                    {
+                        'order': 10,
+                        'preference': 20,
+                        'flags': 'A',
+                        'service': 'svc',
+                        'regexp': '',
+                        'replacement': 'example.com',
+                    }
+                ],
+                'NAPTR',
+            ),
+        )
+        # missing replacement — no error (format validator handles presence)
+        self.assertEqual(
+            [],
+            validate(
+                NaptrValue,
+                [{'order': 10, 'preference': 20, 'flags': 'S'}],
+                'NAPTR',
+            ),
+        )
+
+        # opt-in via Record.enable_validator
+        zone = Zone('unit.tests.', [])
+        Record.enable_validators(['legacy'])
+        Record.enable_validator('naptr-value-best-practice', types=['NAPTR'])
+        try:
+            with self.assertRaises(ValidationError) as ctx:
+                Record.new(
+                    zone,
+                    '',
+                    {
+                        'type': 'NAPTR',
+                        'ttl': 600,
+                        'value': {
+                            'order': 10,
+                            'preference': 20,
+                            'flags': 'A',
+                            'service': 'svc',
+                            'regexp': '',
+                            'replacement': 'example.com',
+                        },
+                    },
+                )
+            self.assertEqual(
+                ['NAPTR replacement "example.com" missing trailing .'],
+                ctx.exception.reasons,
+            )
+            # trailing dot passes
+            Record.new(
+                zone,
+                '',
+                {
+                    'type': 'NAPTR',
+                    'ttl': 600,
+                    'value': {
+                        'order': 10,
+                        'preference': 20,
+                        'flags': 'S',
+                        'service': 'svc',
+                        'regexp': '',
+                        'replacement': 'target.example.com.',
+                    },
+                },
+            )
+        finally:
+            Record.disable_validator(
+                'naptr-value-best-practice', types=['NAPTR']
+            )
+
     def test_rfc_value_validator_not_in_defaults(self):
         registered = Record.registered_validators()
         naptr_value_ids = set(
@@ -631,25 +753,6 @@ class TestRecordNaptr(TestCase):
             ),
         )
 
-        # replacement missing trailing dot
-        self.assertEqual(
-            ['NAPTR replacement "example.com" missing trailing .'],
-            validate(
-                NaptrValue,
-                [
-                    {
-                        'order': 10,
-                        'preference': 20,
-                        'flags': 'A',
-                        'service': 'svc',
-                        'regexp': '',
-                        'replacement': 'example.com',
-                    }
-                ],
-                'NAPTR',
-            ),
-        )
-
         # missing all fields
         self.assertEqual(
             [
@@ -668,28 +771,6 @@ class TestRecordNaptr(TestCase):
         Record.enable_validators(['legacy'])
         Record.enable_validator('naptr-value-rfc', types=['NAPTR'])
         try:
-            # replacement missing trailing dot
-            with self.assertRaises(ValidationError) as ctx:
-                Record.new(
-                    zone,
-                    '',
-                    {
-                        'type': 'NAPTR',
-                        'ttl': 600,
-                        'value': {
-                            'order': 10,
-                            'preference': 20,
-                            'flags': 'A',
-                            'service': 'svc',
-                            'regexp': '',
-                            'replacement': 'example.com',
-                        },
-                    },
-                )
-            self.assertEqual(
-                ['NAPTR replacement "example.com" missing trailing .'],
-                ctx.exception.reasons,
-            )
             # order out of range
             with self.assertRaises(ValidationError) as ctx:
                 Record.new(

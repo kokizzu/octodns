@@ -34,12 +34,6 @@ def _check_target_trailing_dot(target, _type, key='value'):
     return []
 
 
-def validate_target_fqdn(target, _type, key='value'):
-    return _check_target_format(
-        target, _type, key
-    ) + _check_target_trailing_dot(target, _type, key)
-
-
 class TargetValueValidator(ValueValidator):
     '''
     Validates a single-value target FQDN (CNAME, ALIAS, DNAME, PTR).

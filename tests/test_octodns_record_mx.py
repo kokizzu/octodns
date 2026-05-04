@@ -9,7 +9,12 @@ from helpers import SimpleProvider
 from octodns.processor.templating import Templating
 from octodns.record import Record
 from octodns.record.exception import ValidationError
-from octodns.record.mx import MxRecord, MxValue, MxValueRfcValidator
+from octodns.record.mx import (
+    MxRecord,
+    MxValue,
+    MxValueBestPracticeValidator,
+    MxValueRfcValidator,
+)
 from octodns.record.rr import RrParseError
 from octodns.zone import Zone
 
@@ -214,20 +219,15 @@ class TestRecordMx(TestCase):
             )
         self.assertEqual(['missing exchange'], ctx.exception.reasons)
 
-        # missing trailing .
-        with self.assertRaises(ValidationError) as ctx:
-            Record.new(
-                self.zone,
-                '',
-                {
-                    'type': 'MX',
-                    'ttl': 600,
-                    'value': {'preference': 10, 'exchange': 'foo.bar.com'},
-                },
-            )
-        self.assertEqual(
-            ['MX exchange "foo.bar.com" missing trailing .'],
-            ctx.exception.reasons,
+        # missing trailing . is a best-practice check, not legacy
+        Record.new(
+            self.zone,
+            '',
+            {
+                'type': 'MX',
+                'ttl': 600,
+                'value': {'preference': 10, 'exchange': 'foo.bar.com'},
+            },
         )
 
         # exchange must be a valid FQDN
@@ -317,7 +317,8 @@ class TestMxValue(TestCase):
                 'ttl': 1800,
                 'value': {
                     'preference': 10,
-                    # Exchange is missing trailing dot
+                    # Exchange is missing trailing dot — legacy only checks
+                    # format, not trailing dot (that's a best-practice check)
                     'exchange': '{zone_name}example.com',
                 },
             },
@@ -325,12 +326,7 @@ class TestMxValue(TestCase):
         )
         zone.add_record(mx, replace=True)
 
-        with self.assertRaises(ValidationError) as ctx:
-            templ.process_source_and_target_zones(zone, None, None)
-        self.assertEqual(
-            ['MX exchange "unit.tests.example.com" missing trailing .'],
-            ctx.exception.reasons,
-        )
+        templ.process_source_and_target_zones(zone, None, None)
 
     def test_rfc_value_validator_not_in_defaults(self):
         registered = Record.registered_validators()
@@ -409,6 +405,25 @@ class TestMxValue(TestCase):
         self.assertEqual(
             ['missing exchange'], validate(MxValue, [{'preference': 10}], 'MX')
         )
+
+    def test_best_practice_validator(self):
+        validate = MxValueBestPracticeValidator(
+            'mx-value-best-practice'
+        ).validate
+
+        # exchange with trailing dot passes
+        self.assertEqual(
+            [],
+            validate(
+                MxValue,
+                [{'preference': 10, 'exchange': 'mx.unit.tests.'}],
+                'MX',
+            ),
+        )
+        # null MX passes
+        self.assertEqual(
+            [], validate(MxValue, [{'preference': 0, 'exchange': '.'}], 'MX')
+        )
         # exchange missing trailing dot
         self.assertEqual(
             ['MX exchange "mx.unit.tests" missing trailing .'],
@@ -416,6 +431,50 @@ class TestMxValue(TestCase):
                 MxValue, [{'preference': 10, 'exchange': 'mx.unit.tests'}], 'MX'
             ),
         )
+        # legacy alias for exchange
+        self.assertEqual(
+            ['MX exchange "mx.unit.tests" missing trailing .'],
+            validate(
+                MxValue, [{'preference': 10, 'value': 'mx.unit.tests'}], 'MX'
+            ),
+        )
+        # missing exchange — no error (format validator handles presence)
+        self.assertEqual([], validate(MxValue, [{'preference': 10}], 'MX'))
+
+        # opt-in via Record.enable_validator
+        zone = Zone('unit.tests.', [])
+        Record.enable_validators(['legacy'])
+        Record.enable_validator('mx-value-best-practice', types=['MX'])
+        try:
+            with self.assertRaises(ValidationError) as ctx:
+                Record.new(
+                    zone,
+                    'test',
+                    {
+                        'type': 'MX',
+                        'ttl': 600,
+                        'value': {
+                            'preference': 10,
+                            'exchange': 'mx.unit.tests',
+                        },
+                    },
+                )
+            self.assertEqual(
+                ['MX exchange "mx.unit.tests" missing trailing .'],
+                ctx.exception.reasons,
+            )
+            # trailing dot passes
+            Record.new(
+                zone,
+                'test',
+                {
+                    'type': 'MX',
+                    'ttl': 600,
+                    'value': {'preference': 10, 'exchange': 'mx.unit.tests.'},
+                },
+            )
+        finally:
+            Record.disable_validator('mx-value-best-practice', types=['MX'])
 
     def test_rfc_value_validator_opt_in(self):
         zone = Zone('unit.tests.', [])

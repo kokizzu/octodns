@@ -307,15 +307,25 @@ To opt into all strict validators at once::
 
 Validators active in ``best-practice`` only:
 
-+-------------------------------+--------------------------------------------------+
-| id                            | description                                      |
-+===============================+==================================================+
-| ``target-value-best-practice``| CNAME/ALIAS/DNAME target must end with ``"."``   |
-|                               | (absolute name prevents resolver search-domain   |
-|                               | append)                                          |
-+-------------------------------+--------------------------------------------------+
-| ``targets-value-best-practice``| NS/PTR targets must each end with ``"."``       |
-+-------------------------------+--------------------------------------------------+
++----------------------------------+-----------------------------------------------+
+| id                               | description                                   |
++==================================+===============================================+
+| ``target-value-best-practice``   | CNAME/ALIAS/DNAME target must end with        |
+|                                  | ``"."`` (absolute name prevents resolver      |
+|                                  | search-domain append)                         |
++----------------------------------+-----------------------------------------------+
+| ``targets-value-best-practice``  | NS/PTR targets must each end with ``"."``     |
++----------------------------------+-----------------------------------------------+
+| ``mx-value-best-practice``       | MX ``exchange`` must end with ``"."``         |
++----------------------------------+-----------------------------------------------+
+| ``srv-value-best-practice``      | SRV ``target`` must end with ``"."``          |
++----------------------------------+-----------------------------------------------+
+| ``svcb-value-best-practice``     | SVCB ``targetname`` must end with ``"."``     |
++----------------------------------+-----------------------------------------------+
+| ``https-value-best-practice``    | HTTPS ``targetname`` must end with ``"."``    |
++----------------------------------+-----------------------------------------------+
+| ``naptr-value-best-practice``    | NAPTR ``replacement`` must end with ``"."``   |
++----------------------------------+-----------------------------------------------+
 
 The recommended configuration is to enable both sets::
 
